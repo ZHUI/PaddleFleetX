@@ -346,7 +346,7 @@ class EagerEngine(BasicEngine):
             self._optimizer.clear_grad()
 
             if self._run_mode == 'step' and not skip_first:
-                if self._eval_freq > 0 and step % self._eval_freq == 0:
+                if self._eval_freq > 0 and (step + 1) % self._eval_freq == 0:
 
                     eval_losses = []
                     eval_step_start = get_timestamp()

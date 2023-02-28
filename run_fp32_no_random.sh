@@ -27,6 +27,7 @@ python tools/train.py \
     -o Engine.mix_precision.dtype="float16" \
     -o Engine.mix_precision.level="O0" \
     -o Engine.logging_freq="1" \
+    -o Engine.eval_freq=10 \
     -o Engine.save_load.save_steps="100000" \
     -o Optimizer.grad_clip.multi_precision=True \
     -o Data.Train.dataset.input_dir=./my-gpt2_text \
@@ -36,4 +37,7 @@ python tools/train.py \
     -o Global.global_batch_size=4 \
     -o Model.hidden_dropout_prob=0.0 \
     -o Model.attention_probs_dropout_prob=0.0 \
+    -o Optimizer.lr.max_lr=0.00015 \
+    -o Optimizer.lr.min_lr=0.0 \
+    -o Optimizer.lr.decay_steps=320000 \
     -o Data.Eval.dataset.input_dir=./my-gpt2_text
