@@ -132,7 +132,19 @@ class MultiHeadAttention(nn.Layer):
             embed_dim, embed_dim, weight_attr, bias_attr=bias_attr)
 
     def _fuse_prepare_qkv(self, query, use_cache=False, cache=None):
+        print("attention qkv debug: ", [{
+            "sum": x.abs().sum().item(),
+            "mean": x.abs().mean().item()
+        } for x in [
+            query,
+            self.qkv_proj.weight,
+            self.qkv_proj.bias,
+        ]])
         mix_layer = self.qkv_proj(query)
+        print("attention mix_layer", [{
+            "sum": x.abs().sum().item(),
+            "mean": x.abs().mean().item()
+        } for x in [mix_layer, ]])
         mix_layer = paddle.reshape_(mix_layer, [0, 0, -1, 3 * self.head_dim])
         mix_layer = paddle.transpose(mix_layer, [0, 2, 1, 3])
         q, k, v = paddle.split(mix_layer, num_or_sections=3, axis=-1)
@@ -275,10 +287,19 @@ class MultiHeadAttention(nn.Layer):
                 q, k, v, cache = self._prepare_qkv(query, key, value,
                                                    use_cache, cache)
 
+        print("attention q_layer", [{
+            "sum": x.abs().sum().item(),
+            "mean": x.abs().mean().item()
+        } for x in [q, ]])
         if self.use_recompute and self.recompute_granularity == "core_attn" and self.do_recompute:
             out, weights = recompute(self.core_attn, q, k, v, attn_mask)
         else:
             out, weights = self.core_attn(q, k, v, attn_mask=attn_mask)
+
+        print("core_attn out", [{
+            "sum": x.abs().sum().item(),
+            "mean": x.abs().mean().item()
+        } for x in [out, ]])
 
         # project to output
         out = self.out_proj(out)
@@ -486,8 +507,18 @@ class TransformerDecoderLayer(nn.Layer):
     def forward(self, tgt, memory, tgt_mask=None, use_cache=False, cache=None):
         residual = tgt
 
+        print("hidden_states start", [{
+            "sum": x.abs().sum().item(),
+            "mean": x.abs().mean().item()
+        } for x in [tgt, ]])
         if self.normalize_before:
             tgt = self.norm1(tgt)
+
+        # print(self.norm1, self.norm1.weight, self.norm1.bias)
+        print("hidden norm before", [{
+            "sum": x.abs().sum().item(),
+            "mean": x.abs().mean().item()
+        } for x in [tgt, ]])
 
         if use_cache is False:
             if self.use_recompute and self.recompute_granularity == "full_attn" and self.do_recompute:
@@ -498,6 +529,10 @@ class TransformerDecoderLayer(nn.Layer):
         else:
             tgt, incremental_cache = self.self_attn(tgt, tgt, tgt, tgt_mask,
                                                     use_cache, cache)
+        print("attention_output", [{
+            "sum": x.abs().sum().item(),
+            "mean": x.abs().mean().item()
+        } for x in [tgt, ]])
         tgt = residual + self.dropout1(tgt)
         if not self.normalize_before:
             tgt = self.norm1(tgt)
@@ -686,14 +721,25 @@ class GPTModel(nn.Layer):
             position_ids = position_ids.unsqueeze(0)
             # .expand_as(input_ids)
             position_ids = paddle.expand_as(position_ids, input_ids)
+
+        print("input_ids", [{
+            "sum": x.abs().sum().item(),
+            "mean": x.abs().mean().item()
+        } for x in [input_ids, ]])
         embedding_output = self.embeddings(
             input_ids=input_ids, position_ids=position_ids)
 
+        print("embedding_output", [{
+            "sum": x.abs().sum().item(),
+            "mean": x.abs().mean().item()
+        } for x in [embedding_output, ]])
 
-        fused_softmax_with_triangular= strtobool(os.getenv("fused_softmax_with_triangular", True))
+        fused_softmax_with_triangular = strtobool(
+            os.getenv("fused_softmax_with_triangular", True))
         # fused_softmax_with_triangular is only suppported on GPU/DCU.
         # If on non-GPU devices, we use user defined mask and non-fused softmax.
-        if not fused_softmax_with_triangular or not paddle.is_compiled_with_cuda():
+        if not fused_softmax_with_triangular or not paddle.is_compiled_with_cuda(
+        ):
             # TODO, use registered buffer
             causal_mask = paddle.tensor.triu(
                 paddle.ones(
@@ -712,7 +758,8 @@ class GPTModel(nn.Layer):
         encoder_outputs = self.decoder(
             embedding_output,
             memory=None,
-            tgt_mask=None if (fused_softmax_with_triangular and self.training and paddle.is_compiled_with_cuda() )
+            tgt_mask=None if (fused_softmax_with_triangular and
+                              self.training and paddle.is_compiled_with_cuda())
             else attention_mask,  # use softmax_mask_fuse_upper_triangle
             use_cache=use_cache,
             cache=cache)

@@ -52,6 +52,22 @@ if __name__ == "__main__":
     env.set_seed(cfg.Global.seed)
 
     module = build_module(cfg)
+    from distutils.util import strtobool
+    import os
+    load_torch_random_345m_ckpt = strtobool(
+        os.getenv("load_torch_random_345m_ckpt", False))
+    if load_torch_random_345m_ckpt:
+        from load_t2p import trans
+        import torch
+        torch_state = torch.load(
+            '/root/paddlejob/workspace/env_run/gpt_benchmark/Megatron-LM/ckpt_345m_init_fp32.bin',
+            map_location="cpu")
+        paddle_state = trans(torch_state)
+        missing_keys, unexpected_keys = module.model.set_state_dict(
+            paddle_state)
+        print("missing_keys:", missing_keys)
+        print("unexpected_keys:", unexpected_keys)
+
     config.print_config(cfg)
 
     train_data_loader = build_dataloader(cfg.Data, "Train")
