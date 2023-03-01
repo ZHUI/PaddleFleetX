@@ -37,6 +37,7 @@ python tools/train.py \
     -o Global.global_batch_size=4 \
     -o Model.hidden_dropout_prob=0.0 \
     -o Model.attention_probs_dropout_prob=0.0 \
+    -o Model.num_layers=1 \
     -o Optimizer.lr.max_lr=0.00015 \
     -o Optimizer.lr.min_lr=0.0 \
     -o Optimizer.lr.decay_steps=320000 \
