@@ -134,6 +134,7 @@ class MultiHeadAttention(nn.Layer):
             embed_dim, embed_dim, weight_attr, bias_attr=bias_attr)
 
     def _fuse_prepare_qkv(self, query, use_cache=False, cache=None):
+        # NOTE : save and check attention qkv
         print("attention qkv debug: ", [{
             "sum": x.abs().sum().item(),
             "mean": x.abs().mean().item()
@@ -143,13 +144,17 @@ class MultiHeadAttention(nn.Layer):
             self.qkv_proj.bias,
         ]])
         mix_layer = self.qkv_proj(query)
+        # NOTE : save and check mix_layer
         print("attention mix_layer", [{
             "sum": x.abs().sum().item(),
             "mean": x.abs().mean().item()
         } for x in [mix_layer, ]])
         mix_layer = paddle.reshape_(mix_layer, [0, 0, -1, 3 * self.head_dim])
         mix_layer = paddle.transpose(mix_layer, [0, 2, 1, 3])
+        # NOTE : save and check mix_layer after reshape and transpose
         q, k, v = paddle.split(mix_layer, num_or_sections=3, axis=-1)
+
+        # NOTE : save and check q, k, v
 
         assert not isinstance(
             cache, self.StaticCache
@@ -172,14 +177,17 @@ class MultiHeadAttention(nn.Layer):
 
         """
         q = self.q_proj(query)
+        # NOTE : save and check q
         q = tensor.reshape(x=q, shape=[0, 0, -1, self.head_dim])
         q = tensor.transpose(x=q, perm=[0, 2, 1, 3])
+        # NOTE : save and check q after reshape and transpose
 
         if isinstance(cache, self.StaticCache):
             # for encoder-decoder attention in inference and has cached
             k, v = cache.k, cache.v
         else:
             k, v = self.compute_kv(key, value)
+            # NOTE : save and check k/v
 
         if isinstance(cache, self.Cache):
             # for decoder self-attention in inference
@@ -203,11 +211,15 @@ class MultiHeadAttention(nn.Layer):
 
         """
         k = self.k_proj(key)
+        # NOTE : save and check k
         v = self.v_proj(value)
+        # NOTE : save and check v
         k = tensor.reshape(x=k, shape=[0, 0, -1, self.head_dim])
         k = tensor.transpose(x=k, perm=[0, 2, 1, 3])
+        # NOTE : save and check k after reshape and transpose
         v = tensor.reshape(x=v, shape=[0, 0, -1, self.head_dim])
         v = tensor.transpose(x=v, perm=[0, 2, 1, 3])
+        # NOTE : save and check v after reshape and transpose
         return k, v
 
     def gen_cache(self, key, value=None, type=Cache):
@@ -241,12 +253,17 @@ class MultiHeadAttention(nn.Layer):
         product = paddle.matmul(
             x=q.scale(1.0 / scale_qk_coeff), y=k, transpose_y=True)
 
+        # NOTE : save and check product after matmul
+
         if self.scale_qk_coeff != 1.0:
             product = product.scale(self.scale_qk_coeff)
+            # NOTE : save and check product after scale
 
         if attn_mask is not None:
             product = product + attn_mask
+            # NOTE : save and check product after adding attn_mask
             weights = F.softmax(product)
+            # NOTE : save and check weights after softmax
         else:
             weights = incubate.softmax_mask_fuse_upper_triangle(product)
 
@@ -258,10 +275,12 @@ class MultiHeadAttention(nn.Layer):
                 mode="upscale_in_train")
 
         out = paddle.matmul(weights, v)
+        # NOTE : save and check out after matmul
 
         # combine heads
         out = tensor.transpose(out, perm=[0, 2, 1, 3])
         out = tensor.reshape(x=out, shape=[0, 0, -1])
+        # NOTE : save and check out after transpose/reshape
 
         return out, weights
 
@@ -282,9 +301,11 @@ class MultiHeadAttention(nn.Layer):
         if use_cache is False:
             if self.fuse_attn_qkv:
                 q, k, v = self._fuse_prepare_qkv(query, use_cache, cache)
+                # NOTE : save and check q/k/v
             else:
                 q, k, v = self._prepare_qkv(query, key, value, use_cache,
                                             cache)
+                # NOTE : save and check q/k/v
         else:
             if self.fuse_attn_qkv:
                 q, k, v, cache = self._fuse_prepare_qkv(query, use_cache,
@@ -302,6 +323,7 @@ class MultiHeadAttention(nn.Layer):
         else:
             out, weights = self.core_attn(q, k, v, attn_mask=attn_mask)
 
+        # NOTE : save and check out after core_attn
         print("core_attn out", [{
             "sum": x.abs().sum().item(),
             "mean": x.abs().mean().item()
@@ -309,6 +331,7 @@ class MultiHeadAttention(nn.Layer):
 
         # project to output
         out = self.out_proj(out)
+        # NOTE : save and check out after out_proj
 
         outs = [out]
         if self.need_weights:
@@ -388,6 +411,7 @@ class TransformerDecoder(nn.Layer):
 
         if self.norm is not None:
             output = self.norm(output)
+            # NOTE : save and check output after norm
         return output if use_cache is False else (output, new_caches)
 
     def gen_cache(self, memory, do_zip=False):
@@ -521,6 +545,7 @@ class TransformerDecoderLayer(nn.Layer):
         } for x in [tgt, ]])
         if self.normalize_before:
             tgt = self.norm1(tgt)
+            # NOTE : save and check tgt after norm1
 
         # print(self.norm1, self.norm1.weight, self.norm1.bias)
         print("hidden norm before", [{
@@ -537,17 +562,21 @@ class TransformerDecoderLayer(nn.Layer):
         else:
             tgt, incremental_cache = self.self_attn(tgt, tgt, tgt, tgt_mask,
                                                     use_cache, cache)
+        # NOTE : save and check attention_output
         print("attention_output", [{
             "sum": x.abs().sum().item(),
             "mean": x.abs().mean().item()
         } for x in [tgt, ]])
         tgt = residual + self.dropout1(tgt)
+        # NOTE : save and check tgt after add_dropout
+
         if not self.normalize_before:
             tgt = self.norm1(tgt)
 
         residual = tgt
         if self.normalize_before:
             tgt = self.norm2(tgt)
+            # NOTE : save and check tgt after norm2
 
         # if self.expert_mode:
         #     tgt = self.moe_mlp(tgt)
@@ -556,8 +585,14 @@ class TransformerDecoderLayer(nn.Layer):
         else:
             tgt = self.dropout2(
                 self.linear2(self.activation(self.linear1(tgt))))
+            # NOTE : divide the operations and save/check separately
+            # NOTE : out = self.linear1(tgt)
+            # NOTE : out = self.activation(out)
+            # NOTE : out = self.linear2(out)
+            # NOTE : tgt = self.dropout2(out)
 
         tgt = residual + tgt
+        # NOTE : save and check tgt after add_op
 
         if not self.normalize_before:
             tgt = self.norm2(tgt)
@@ -608,10 +643,15 @@ class GPTEmbeddings(nn.Layer):
             seq_length = paddle.cumsum(ones, axis=-1)
             position_ids = seq_length - ones
 
+        # NOTE : save and check input_ids
         input_embedings = self.word_embeddings(input_ids)
+        # NOTE : save and check input_embedings
         position_embeddings = self.position_embeddings(position_ids)
+        # NOTE : save and check position_embeddings
         embeddings = input_embedings + position_embeddings
+        # NOTE : save and check embeddings
         embeddings = self.dropout(embeddings)
+        # no dropout
         return embeddings
 
 
@@ -733,6 +773,7 @@ class GPTModel(nn.Layer):
             # .expand_as(input_ids)
             position_ids = paddle.expand_as(position_ids, input_ids)
 
+        # NOTE : save and check input_ids/positon ids
         print("input_ids", [{
             "sum": x.abs().sum().item(),
             "mean": x.abs().mean().item()
@@ -765,6 +806,8 @@ class GPTModel(nn.Layer):
                 attention_mask = causal_mask
             # The tensor returned by triu not in static graph.
             attention_mask.stop_gradient = True
+        
+        # NOTE : save and check attention_mask
 
         encoder_outputs = self.decoder(
             embedding_output,
@@ -774,6 +817,8 @@ class GPTModel(nn.Layer):
             else attention_mask,  # use softmax_mask_fuse_upper_triangle
             use_cache=use_cache,
             cache=cache)
+        
+        # NOTE : save and check encoder_outputs
 
         return encoder_outputs
 
@@ -813,6 +858,7 @@ class GPTForPretraining(nn.Layer):
             encoder_outputs,
             get_attr(self.gpt.embeddings.word_embeddings, "weight"),
             transpose_y=True)
+        # NOTE : save and check logits after matmul_op
 
         if use_cache:
             return logits, cached_kvs
